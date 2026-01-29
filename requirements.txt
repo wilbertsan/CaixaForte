@@ -1,0 +1,28 @@
+# Agno Framework
+agno
+
+# Modelos de IA
+openai
+
+# Ferramentas financeiras
+yfinance
+pandas
+numpy
+
+# APIs brasileiras (B3, dados financeiros)
+requests
+beautifulsoup4
+
+# Google APIs (Professor Pardal)
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+pdfplumber
+
+# Utilitários
+python-dotenv
+rich
+schedule
+
+# Telegram Bot
+python-telegram-bot
