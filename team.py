@@ -32,7 +32,7 @@ def _get_db() -> SqliteDb:
 
 
 def criar_team_caixa_forte(
-    model_id: str = "gpt-4o",
+    model_id: str = "gpt-4o-mini",
     session_id: str | None = None,
     user_id: str | None = None,
 ) -> Team:
