@@ -113,9 +113,12 @@ def main():
 
     exibir_boas_vindas()
 
-    # Criar o time
+    # Criar o time com sessão fixa para manter histórico entre execuções
     console.print("[yellow]Iniciando equipe...[/yellow]")
-    team = criar_team_caixa_forte()
+    team = criar_team_caixa_forte(
+        session_id="main-cli",
+        user_id="usuario-local",
+    )
     console.print("[green]Equipe pronta![/green]\n")
 
     while True:

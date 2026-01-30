@@ -19,6 +19,9 @@ google-auth-httplib2
 google-auth-oauthlib
 pdfplumber
 
+# Persistência (memória dos agentes)
+sqlalchemy
+
 # Utilitários
 python-dotenv
 rich

@@ -31,18 +31,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Variável global para o time (criado uma vez)
-team = None
+# Cache de times por usuário para manter memória individual
+_teams: dict[str, object] = {}
 
 
-def get_team():
-    """Retorna o time, criando se necessário (lazy loading)"""
-    global team
-    if team is None:
-        logger.info("Criando time Caixa Forte...")
-        team = criar_team_caixa_forte()
-        logger.info("Time criado com sucesso!")
-    return team
+def get_team(user_id: str, chat_id: str):
+    """Retorna o time para o usuário, criando se necessário (lazy loading com memória por usuário)"""
+    key = f"{user_id}_{chat_id}"
+    if key not in _teams:
+        logger.info(f"Criando time Caixa Forte para usuário {user_id}...")
+        _teams[key] = criar_team_caixa_forte(
+            session_id=f"telegram-{chat_id}",
+            user_id=f"telegram-{user_id}",
+        )
+        logger.info(f"Time criado para usuário {user_id}!")
+    return _teams[key]
 
 
 # Mensagens
@@ -201,8 +204,11 @@ async def processar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     try:
-        # Obter o time
-        caixa_forte = get_team()
+        # Obter o time com memória por usuário
+        caixa_forte = get_team(
+            user_id=str(user.id),
+            chat_id=str(update.effective_chat.id),
+        )
 
         # Processar a pergunta
         response = caixa_forte.run(mensagem)

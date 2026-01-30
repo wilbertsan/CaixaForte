@@ -4,8 +4,10 @@ Team Caixa Forte - Equipe DuckTales de Consultoria Financeira
 Este módulo configura o time completo de agentes financeiros
 coordenados pelo Tio Patinhas.
 """
+import os
 from agno.team import Team
 from agno.models.openai import OpenAIChat
+from agno.db.sqlite import SqliteDb
 
 from agents.tio_patinhas import criar_tio_patinhas
 from agents.huguinho import criar_huguinho
@@ -21,18 +23,35 @@ from agents.gizmoduck import criar_gizmoduck
 from agents.webby import criar_webby
 
 
-def criar_team_caixa_forte(model_id: str = "gpt-4o") -> Team:
+def _get_db() -> SqliteDb:
+    """Retorna a instância do banco SQLite para persistência."""
+    db_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    os.makedirs(db_dir, exist_ok=True)
+    db_path = os.path.join(db_dir, "caixa_forte.db")
+    return SqliteDb(db_file=db_path)
+
+
+def criar_team_caixa_forte(
+    model_id: str = "gpt-4o",
+    session_id: str | None = None,
+    user_id: str | None = None,
+) -> Team:
     """
     Cria o time completo da Caixa Forte.
 
     Args:
         model_id: ID do modelo a ser usado (padrão: gpt-4o)
+        session_id: ID da sessão para persistência de histórico
+        user_id: ID do usuário para memória personalizada
 
     Returns:
         Team configurado com todos os agentes
     """
     # Configurar modelo
     model = OpenAIChat(id=model_id)
+
+    # Configurar banco de dados e memória
+    db = _get_db()
 
     # Criar os agentes especializados
     huguinho = criar_huguinho()
@@ -91,14 +110,21 @@ def criar_team_caixa_forte(model_id: str = "gpt-4o") -> Team:
     - Nunca faça recomendações definitivas de investimento
     """
 
-    # Criar o time
+    # Criar o time com memória persistente
     team = Team(
         name="Caixa Forte",
         description="Equipe DuckTales de Consultoria Financeira",
         members=[huguinho, zezinho, luizinho, donald, gastao, professor_pardal, ze_carioca, maga_patalojica, tia_patilda, gizmoduck, webby],
         model=model,
         instructions=team_instructions,
-        show_members_responses=True
+        show_members_responses=True,
+        # Persistência e memória
+        session_id=session_id,
+        user_id=user_id,
+        db=db,
+        enable_agentic_memory=True,
+        add_history_to_context=True,
+        num_history_runs=5,
     )
 
     return team
