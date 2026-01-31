@@ -3,6 +3,9 @@ Caixa Forte - Sistema de Agentes Financeiros DuckTales
 
 Execute este arquivo para iniciar o sistema de consultoria financeira.
 """
+import warnings
+warnings.filterwarnings("ignore", module="yfinance")
+
 import os
 from dotenv import load_dotenv
 from rich.console import Console

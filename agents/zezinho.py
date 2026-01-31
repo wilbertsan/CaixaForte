@@ -4,6 +4,7 @@ O sobrinho focado em Fundos de Investimento Imobiliário
 """
 from agno.agent import Agent
 from tools.fiis import FIIsTools
+from schemas.fiis import RespostaFIIs
 
 
 def criar_zezinho(model=None) -> Agent:
@@ -67,7 +68,9 @@ def criar_zezinho(model=None) -> Agent:
             tools.compare_fiis,
             tools.calculate_income
         ],
-        model=model
+        model=model,
+        output_schema=RespostaFIIs,
+        structured_outputs=True,
     )
 
     return agent

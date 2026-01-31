@@ -2,6 +2,9 @@
 Caixa Forte - Bot do Telegram
 Integração do time DuckTales de consultoria financeira com Telegram
 """
+import warnings
+warnings.filterwarnings("ignore", module="yfinance")
+
 import os
 import logging
 from dotenv import load_dotenv
@@ -215,7 +218,6 @@ async def processar_mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if response and response.content:
             resposta = response.content
-
             # Telegram tem limite de 4096 caracteres
             if len(resposta) > 4000:
                 # Dividir em partes

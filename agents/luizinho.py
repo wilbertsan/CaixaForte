@@ -4,6 +4,7 @@ O sobrinho conservador focado em segurança e previsibilidade
 """
 from agno.agent import Agent
 from tools.renda_fixa import RendaFixaTools
+from schemas.renda_fixa import RespostaRendaFixa
 
 
 def criar_luizinho(model=None) -> Agent:
@@ -70,7 +71,9 @@ def criar_luizinho(model=None) -> Agent:
             tools.simulate_tesouro_selic,
             tools.compare_investments
         ],
-        model=model
+        model=model,
+        output_schema=RespostaRendaFixa,
+        structured_outputs=True,
     )
 
     return agent

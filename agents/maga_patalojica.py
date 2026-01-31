@@ -4,6 +4,7 @@ A feiticeira que conhece todos os atalhos legais do sistema tributário
 """
 from agno.agent import Agent
 from tools.tributario import TributarioTools
+from schemas.tributario import RespostaTributario
 
 
 def criar_maga_patalojica(model=None) -> Agent:
@@ -92,7 +93,9 @@ def criar_maga_patalojica(model=None) -> Agent:
             tools.listar_investimentos_isentos,
             tools.calendario_fiscal
         ],
-        model=model
+        model=model,
+        output_schema=RespostaTributario,
+        structured_outputs=True,
     )
 
     return agent

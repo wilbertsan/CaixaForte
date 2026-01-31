@@ -4,6 +4,7 @@ O sobrinho analítico focado em análise fundamentalista de ações
 """
 from agno.agent import Agent
 from tools.acoes import AcoesTools
+from schemas.acoes import RespostaAcoes
 
 
 def criar_huguinho(model=None) -> Agent:
@@ -60,7 +61,9 @@ def criar_huguinho(model=None) -> Agent:
             tools.compare_stocks,
             tools.get_dividends
         ],
-        model=model
+        model=model,
+        output_schema=RespostaAcoes,
+        structured_outputs=True,
     )
 
     return agent

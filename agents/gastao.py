@@ -5,6 +5,7 @@ O primo sortudo que identifica oportunidades de mercado
 from agno.agent import Agent
 from tools.acoes import AcoesTools
 from tools.fiis import FIIsTools
+from schemas.oportunidades import RespostaOportunidades
 
 
 def criar_gastao(model=None) -> Agent:
@@ -78,7 +79,9 @@ def criar_gastao(model=None) -> Agent:
             fiis_tools.get_fii_dividends,
             fiis_tools.compare_fiis
         ],
-        model=model
+        model=model,
+        output_schema=RespostaOportunidades,
+        structured_outputs=True,
     )
 
     return agent

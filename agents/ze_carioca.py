@@ -4,6 +4,7 @@ O papagaio brasileiro que vive conectado com o mundo e enxerga além do quintal
 """
 from agno.agent import Agent
 from tools.internacional import InternacionalTools
+from schemas.internacional import RespostaInternacional
 
 
 def criar_ze_carioca(model=None) -> Agent:
@@ -81,7 +82,9 @@ def criar_ze_carioca(model=None) -> Agent:
             tools.sugerir_diversificacao_global,
             tools.analisar_exposicao_cambial
         ],
-        model=model
+        model=model,
+        output_schema=RespostaInternacional,
+        structured_outputs=True,
     )
 
     return agent

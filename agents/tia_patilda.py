@@ -4,6 +4,7 @@ A tia prática que pensa em patrimônio que atravessa gerações
 """
 from agno.agent import Agent
 from tools.ativos_reais import AtivosReaisTools
+from schemas.ativos_reais import RespostaAtivosReais
 
 
 def criar_tia_patilda(model=None) -> Agent:
@@ -91,7 +92,9 @@ def criar_tia_patilda(model=None) -> Agent:
             tools.listar_ativos_alternativos,
             tools.calcular_patrimonio_multigeracional
         ],
-        model=model
+        model=model,
+        output_schema=RespostaAtivosReais,
+        structured_outputs=True,
     )
 
     return agent

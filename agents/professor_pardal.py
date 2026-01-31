@@ -4,6 +4,7 @@ O inventor genial que automatiza processos com Google APIs
 """
 from agno.agent import Agent
 from tools.google_integration import GoogleIntegrationTools
+from schemas.automacao import RespostaAutomacao
 
 
 def criar_professor_pardal(model=None) -> Agent:
@@ -100,7 +101,9 @@ def criar_professor_pardal(model=None) -> Agent:
             tools.processar_pdfs_drive,
             tools.consultar_planilha
         ],
-        model=model
+        model=model,
+        output_schema=RespostaAutomacao,
+        structured_outputs=True,
     )
 
     return agent

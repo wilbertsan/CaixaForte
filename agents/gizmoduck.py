@@ -4,6 +4,7 @@ O herói tecnológico obcecado por segurança e protocolos
 """
 from agno.agent import Agent
 from tools.cripto import CriptoTools
+from schemas.cripto import RespostaCripto
 
 
 def criar_gizmoduck(model=None) -> Agent:
@@ -126,7 +127,9 @@ def criar_gizmoduck(model=None) -> Agent:
             tools.comparar_custodia,
             tools.listar_classificacao_ativos
         ],
-        model=model
+        model=model,
+        output_schema=RespostaCripto,
+        structured_outputs=True,
     )
 
     return agent

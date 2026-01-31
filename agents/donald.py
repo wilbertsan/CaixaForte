@@ -4,6 +4,7 @@ O pato prático focado no orçamento do dia-a-dia
 """
 from agno.agent import Agent
 from tools.gastos import GastosTools
+from schemas.gastos import RespostaGastos
 
 
 def criar_donald(model=None) -> Agent:
@@ -79,7 +80,9 @@ def criar_donald(model=None) -> Agent:
             tools.analisar_gastos,
             tools.get_categorias
         ],
-        model=model
+        model=model,
+        output_schema=RespostaGastos,
+        structured_outputs=True,
     )
 
     return agent

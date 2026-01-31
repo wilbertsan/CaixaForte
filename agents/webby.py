@@ -4,6 +4,7 @@ A detetive curiosa que não deixa nenhuma cobrança passar despercebida
 """
 from agno.agent import Agent
 from tools.cartoes import CartoesTools
+from schemas.cartoes import RespostaCartoes
 
 
 def criar_webby(model=None) -> Agent:
@@ -132,7 +133,9 @@ def criar_webby(model=None) -> Agent:
             tools.gerar_relatorio_mensal,
             tools.listar_categorias
         ],
-        model=model
+        model=model,
+        output_schema=RespostaCartoes,
+        structured_outputs=True,
     )
 
     return agent
