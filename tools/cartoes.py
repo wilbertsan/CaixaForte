@@ -1,12 +1,27 @@
 """
 Tools para análise de extratos de cartões de crédito
 Classificação, detecção de padrões e alertas inteligentes
+Integração com Gmail/Drive/Sheets para extratos CSV Nubank
 """
 import os
+import io
+import csv
 import re
-from typing import List, Dict, Optional
+import base64
+from typing import List, Dict, Optional, TypedDict
 from datetime import datetime, timedelta
+
+
+class Transacao(TypedDict, total=False):
+    descricao: str
+    valor: float
+    data: str
+
+
 from collections import defaultdict
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Tentar importar bibliotecas opcionais
 try:
@@ -16,10 +31,23 @@ except ImportError:
     PANDAS_AVAILABLE = False
 
 try:
-    import pdfplumber
-    PDF_AVAILABLE = True
+    from googleapiclient.discovery import build
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.http import MediaIoBaseUpload
+    GOOGLE_APIS_AVAILABLE = True
 except ImportError:
-    PDF_AVAILABLE = False
+    GOOGLE_APIS_AVAILABLE = False
+
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.metadata',
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/spreadsheets',
+]
 
 
 class CartoesTools:
@@ -99,6 +127,10 @@ class CartoesTools:
     def __init__(self):
         self.transacoes = []
         self.gastos_por_categoria = defaultdict(float)
+        self._gmail_service = None
+        self._drive_service = None
+        self._sheets_service = None
+        self._credentials = None
 
     def classificar_transacao(self, descricao: str, valor: float) -> dict:
         """
@@ -133,7 +165,7 @@ class CartoesTools:
             "confianca": "baixa"
         }
 
-    def analisar_extrato_manual(self, transacoes: List[Dict]) -> dict:
+    def analisar_extrato_manual(self, transacoes: List[Transacao]) -> dict:
         """
         Analisa uma lista de transações fornecidas manualmente.
 
@@ -189,7 +221,7 @@ class CartoesTools:
             "observacao": "Análise baseada em palavras-chave. Revise categorias marcadas com baixa confiança."
         }
 
-    def detectar_assinaturas(self, transacoes: List[Dict]) -> dict:
+    def detectar_assinaturas(self, transacoes: List[Transacao]) -> dict:
         """
         Detecta possíveis assinaturas/cobranças recorrentes.
 
@@ -240,7 +272,7 @@ class CartoesTools:
             "dica": "Revise assinaturas que você não usa mais. Pequenos valores mensais somam ao longo do ano!"
         }
 
-    def detectar_anomalias(self, transacoes: List[Dict]) -> dict:
+    def detectar_anomalias(self, transacoes: List[Transacao]) -> dict:
         """
         Detecta possíveis anomalias e cobranças suspeitas.
 
@@ -413,9 +445,9 @@ class CartoesTools:
 
     def gerar_relatorio_mensal(
         self,
-        transacoes: List[Dict],
+        transacoes: List[Transacao],
         limite_cartao: float = None,
-        mes_anterior: Dict = None
+        mes_anterior: Optional[dict] = None
     ) -> dict:
         """
         Gera um relatório mensal completo do cartão.
@@ -509,3 +541,466 @@ class CartoesTools:
             "total_categorias": len(categorias),
             "nota": "Transações não reconhecidas são classificadas como 'Outros'"
         }
+
+    # ===== Integração Gmail/Drive/Sheets para extratos CSV Nubank =====
+
+    def _get_credentials(self) -> Optional['Credentials']:
+        """Obtém ou atualiza credenciais OAuth do Google"""
+        if not GOOGLE_APIS_AVAILABLE:
+            return None
+
+        if self._credentials and self._credentials.valid:
+            return self._credentials
+
+        creds = None
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                if not os.path.exists('credentials.json'):
+                    return None
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json',
+                    SCOPES,
+                    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+                )
+                creds = flow.run_local_server(port=0)
+
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+
+        self._credentials = creds
+        return creds
+
+    def _get_gmail(self):
+        """Retorna serviço Gmail (lazy-load)"""
+        if not self._gmail_service:
+            creds = self._get_credentials()
+            if creds:
+                self._gmail_service = build('gmail', 'v1', credentials=creds)
+        return self._gmail_service
+
+    def _get_drive(self):
+        """Retorna serviço Drive (lazy-load)"""
+        if not self._drive_service:
+            creds = self._get_credentials()
+            if creds:
+                self._drive_service = build('drive', 'v3', credentials=creds)
+        return self._drive_service
+
+    def _get_sheets(self):
+        """Retorna serviço Sheets (lazy-load)"""
+        if not self._sheets_service:
+            creds = self._get_credentials()
+            if creds:
+                self._sheets_service = build('sheets', 'v4', credentials=creds)
+        return self._sheets_service
+
+    def _extrair_transacoes_csv(self, file_content: bytes) -> List[Dict]:
+        """
+        Extrai transações de um CSV de extrato Nubank.
+
+        O CSV do Nubank tem colunas: date,category,title,amount
+        Exemplo:
+            date,category,title,amount
+            2025-01-15,restaurante,IFOOD *IFOOD,-45.90
+            2025-01-16,transporte,Uber *Trip,-22.50
+
+        Args:
+            file_content: Conteúdo do CSV em bytes
+
+        Returns:
+            Lista de dicts com 'data', 'descricao', 'valor', 'categoria_nubank'
+        """
+        transacoes = []
+        try:
+            # Tentar decodificar com utf-8, fallback para latin-1
+            try:
+                text = file_content.decode('utf-8')
+            except UnicodeDecodeError:
+                text = file_content.decode('latin-1')
+
+            reader = csv.DictReader(io.StringIO(text))
+
+            for row in reader:
+                # Colunas padrão Nubank CSV: date, category, title, amount
+                data = row.get('date', '').strip()
+                categoria_nu = row.get('category', '').strip()
+                descricao = row.get('title', '').strip()
+                valor_str = row.get('amount', '0').strip()
+
+                if not descricao or not valor_str:
+                    continue
+
+                try:
+                    valor = abs(float(valor_str.replace(',', '.')))
+                except ValueError:
+                    continue
+
+                transacoes.append({
+                    "data": data,
+                    "descricao": descricao,
+                    "valor": valor,
+                    "categoria_nubank": categoria_nu
+                })
+
+        except Exception:
+            pass
+
+        return transacoes
+
+    def _registrar_na_planilha(self, transacoes_classificadas: List[Dict], mes_ref: str) -> dict:
+        """
+        Registra transações classificadas na planilha Google Sheets.
+
+        Cria/usa aba com nome do mês (ex: "2025-01") e grava:
+        Data | Descrição | Valor | Categoria | Categoria Nubank
+
+        Args:
+            transacoes_classificadas: Lista de transações já classificadas
+            mes_ref: Mês de referência no formato "YYYY-MM"
+
+        Returns:
+            Resultado da gravação
+        """
+        sheets = self._get_sheets()
+        if not sheets:
+            return {"erro": "Serviço Sheets não disponível"}
+
+        sheets_id = os.getenv("CARTOES_SHEETS_ID")
+        if not sheets_id:
+            return {"erro": "CARTOES_SHEETS_ID não configurado no .env"}
+
+        aba = f"Cartão {mes_ref}"
+
+        try:
+            # Verificar se aba existe, senão criar
+            spreadsheet = sheets.spreadsheets().get(
+                spreadsheetId=sheets_id
+            ).execute()
+
+            abas_existentes = [s['properties']['title'] for s in spreadsheet.get('sheets', [])]
+
+            if aba not in abas_existentes:
+                sheets.spreadsheets().batchUpdate(
+                    spreadsheetId=sheets_id,
+                    body={
+                        "requests": [{
+                            "addSheet": {
+                                "properties": {"title": aba}
+                            }
+                        }]
+                    }
+                ).execute()
+
+                # Escrever cabeçalho
+                sheets.spreadsheets().values().update(
+                    spreadsheetId=sheets_id,
+                    range=f"'{aba}'!A1:E1",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [["Data", "Descrição", "Valor", "Categoria", "Categoria Nubank"]]}
+                ).execute()
+
+            # Preparar linhas
+            rows = []
+            for t in transacoes_classificadas:
+                rows.append([
+                    t.get("data", ""),
+                    t.get("descricao", ""),
+                    f"{t.get('valor', 0):.2f}".replace('.', ','),
+                    t.get("categoria", "outros"),
+                    t.get("categoria_nubank", ""),
+                ])
+
+            if rows:
+                sheets.spreadsheets().values().append(
+                    spreadsheetId=sheets_id,
+                    range=f"'{aba}'!A2",
+                    valueInputOption="USER_ENTERED",
+                    insertDataOption="INSERT_ROWS",
+                    body={"values": rows, "majorDimension": "ROWS"}
+                ).execute()
+
+            return {
+                "status": "ok",
+                "aba": aba,
+                "linhas_gravadas": len(rows)
+            }
+
+        except Exception as e:
+            return {"erro": str(e)}
+
+    def buscar_extratos_nubank(self, apenas_nao_lidos: bool = True, limite: int = 10) -> dict:
+        """
+        Busca emails da Nubank com extratos CSV anexados no Gmail.
+
+        Args:
+            apenas_nao_lidos: Se True, busca apenas emails não lidos
+            limite: Número máximo de emails para buscar
+
+        Returns:
+            Lista de emails encontrados com informações dos anexos CSV
+        """
+        if not GOOGLE_APIS_AVAILABLE:
+            return {"erro": "Bibliotecas do Google não instaladas. Execute: pip install google-api-python-client google-auth-oauthlib"}
+
+        gmail = self._get_gmail()
+        if not gmail:
+            return {"erro": "Serviço Gmail não disponível. Verifique credentials.json e token.json"}
+
+        query = "from:todomundo@nubank.com.br has:attachment filename:csv"
+        if apenas_nao_lidos:
+            query = "is:unread " + query
+
+        try:
+            results = gmail.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=limite
+            ).execute()
+
+            messages = results.get('messages', [])
+
+            if not messages:
+                return {
+                    "status": "ok",
+                    "total": 0,
+                    "mensagem": "Nenhum email da Nubank com CSV encontrado",
+                    "emails": []
+                }
+
+            emails_info = []
+            for message in messages:
+                msg = gmail.users().messages().get(
+                    userId='me',
+                    id=message['id'],
+                    format='full'
+                ).execute()
+
+                headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+
+                anexos = []
+                parts = msg['payload'].get('parts', [])
+                for part in parts:
+                    filename = part.get('filename', '')
+                    if filename and filename.lower().endswith('.csv'):
+                        anexos.append({
+                            "nome": filename,
+                            "attachment_id": part['body'].get('attachmentId')
+                        })
+
+                if anexos:
+                    emails_info.append({
+                        "id": message['id'],
+                        "assunto": headers.get('Subject', ''),
+                        "data": headers.get('Date', ''),
+                        "anexos_csv": anexos
+                    })
+
+            return {
+                "status": "ok",
+                "total": len(emails_info),
+                "emails": emails_info
+            }
+
+        except Exception as e:
+            return {"erro": str(e)}
+
+    def processar_extratos_nubank(self, apenas_nao_lidos: bool = True, limite: int = 10) -> dict:
+        """
+        Fluxo completo automático para extratos Nubank:
+        1. Busca emails da Nubank com CSV anexado no Gmail
+        2. Baixa cada CSV
+        3. Envia CSV para pasta "Extratos Cartões" no Google Drive
+        4. Lê e parseia as transações do CSV
+        5. Classifica cada transação por categoria
+        6. Grava na planilha Google Sheets (uma aba por mês)
+        7. Marca email como lido
+        8. Retorna análise completa (categorias, assinaturas, anomalias)
+
+        Args:
+            apenas_nao_lidos: Se True, processa apenas emails não lidos
+            limite: Número máximo de emails para processar
+
+        Returns:
+            Relatório completo com processamento e análise integrada
+        """
+        if not GOOGLE_APIS_AVAILABLE:
+            return {"erro": "Bibliotecas do Google não instaladas"}
+
+        gmail = self._get_gmail()
+        drive = self._get_drive()
+
+        if not gmail or not drive:
+            return {"erro": "Serviços Gmail/Drive não disponíveis"}
+
+        folder_id = os.getenv("CARTOES_FOLDER_ID")
+        if not folder_id:
+            return {"erro": "CARTOES_FOLDER_ID não configurado no .env. Defina o ID da pasta 'Extratos Cartões' no Google Drive."}
+
+        query = "from:todomundo@nubank.com.br has:attachment filename:csv"
+        if apenas_nao_lidos:
+            query = "is:unread " + query
+
+        try:
+            results = gmail.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=limite
+            ).execute()
+
+            messages = results.get('messages', [])
+
+            if not messages:
+                return {
+                    "status": "ok",
+                    "emails_processados": 0,
+                    "csvs_enviados": 0,
+                    "transacoes_extraidas": 0,
+                    "mensagem": "Nenhum email da Nubank com CSV para processar"
+                }
+
+            csvs_enviados = []
+            todas_transacoes = []
+            emails_processados = 0
+
+            for message in messages:
+                msg = gmail.users().messages().get(
+                    userId='me',
+                    id=message['id'],
+                    format='full'
+                ).execute()
+
+                headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+                assunto = headers.get('Subject', 'Sem assunto')
+
+                parts = msg['payload'].get('parts', [])
+                email_tem_csv = False
+
+                for part in parts:
+                    filename = part.get('filename', '')
+                    if not filename or not filename.lower().endswith('.csv'):
+                        continue
+
+                    if not ('body' in part and 'attachmentId' in part['body']):
+                        continue
+
+                    # Baixar anexo CSV do Gmail
+                    attachment = gmail.users().messages().attachments().get(
+                        userId='me',
+                        messageId=message['id'],
+                        id=part['body']['attachmentId']
+                    ).execute()
+
+                    file_data = base64.urlsafe_b64decode(attachment['data'].encode('UTF-8'))
+
+                    # Verificar se já existe no Drive
+                    nome_base = filename.rsplit('.', 1)[0]
+                    existing = drive.files().list(
+                        q=f"'{folder_id}' in parents and name contains '{nome_base}'",
+                        fields="files(id, name)"
+                    ).execute()
+
+                    if not existing.get('files'):
+                        # Upload CSV para o Drive
+                        file_metadata = {
+                            'name': filename,
+                            'mimeType': 'text/csv',
+                            'parents': [folder_id]
+                        }
+
+                        media = MediaIoBaseUpload(
+                            io.BytesIO(file_data),
+                            mimetype='text/csv',
+                            resumable=True
+                        )
+
+                        uploaded = drive.files().create(
+                            body=file_metadata,
+                            media_body=media,
+                            fields='id,name,webViewLink'
+                        ).execute()
+
+                        csvs_enviados.append({
+                            "nome": uploaded.get('name'),
+                            "id": uploaded.get('id'),
+                            "link": uploaded.get('webViewLink'),
+                            "assunto_email": assunto
+                        })
+
+                    # Parsear transações do CSV (sempre, mesmo se já no Drive)
+                    transacoes_csv = self._extrair_transacoes_csv(file_data)
+                    todas_transacoes.extend(transacoes_csv)
+
+                    email_tem_csv = True
+
+                # Marcar email como lido
+                if email_tem_csv:
+                    gmail.users().messages().modify(
+                        userId='me',
+                        id=message['id'],
+                        body={'removeLabelIds': ['UNREAD']}
+                    ).execute()
+                    emails_processados += 1
+
+            # === Classificar transações e gerar análise ===
+            if not todas_transacoes:
+                return {
+                    "status": "ok",
+                    "emails_processados": emails_processados,
+                    "csvs_enviados": len(csvs_enviados),
+                    "transacoes_extraidas": 0,
+                    "arquivos": csvs_enviados,
+                    "mensagem": "CSVs processados mas nenhuma transação extraída. Verifique o formato do CSV."
+                }
+
+            # Classificar cada transação
+            transacoes_classificadas = []
+            for t in todas_transacoes:
+                classificacao = self.classificar_transacao(t["descricao"], t["valor"])
+                transacoes_classificadas.append({
+                    **t,
+                    "categoria": classificacao["categoria"],
+                    "emoji": classificacao["emoji"],
+                    "confianca": classificacao["confianca"],
+                })
+
+            # Detectar mês de referência a partir das datas
+            meses = set()
+            for t in todas_transacoes:
+                data = t.get("data", "")
+                if len(data) >= 7:  # "YYYY-MM" ou "YYYY-MM-DD"
+                    meses.add(data[:7])
+            mes_ref = sorted(meses)[-1] if meses else datetime.now().strftime("%Y-%m")
+
+            # Gravar na planilha
+            resultado_planilha = self._registrar_na_planilha(transacoes_classificadas, mes_ref)
+
+            # Análises
+            analise_extrato = self.analisar_extrato_manual(todas_transacoes)
+            analise_assinaturas = self.detectar_assinaturas(todas_transacoes)
+            analise_anomalias = self.detectar_anomalias(todas_transacoes)
+
+            return {
+                "status": "ok",
+                "emails_processados": emails_processados,
+                "csvs_enviados": len(csvs_enviados),
+                "transacoes_extraidas": len(todas_transacoes),
+                "arquivos": csvs_enviados,
+                "planilha": resultado_planilha,
+                "analise": analise_extrato,
+                "assinaturas": analise_assinaturas,
+                "anomalias": analise_anomalias,
+                "resumo": (
+                    f"Processados {emails_processados} email(s) da Nubank. "
+                    f"Encontradas {len(todas_transacoes)} transações totalizando R$ {analise_extrato.get('total_gastos', 0):.2f}. "
+                    f"Dados gravados na aba '{resultado_planilha.get('aba', mes_ref)}' da planilha. "
+                    f"{analise_anomalias.get('total_alertas', 0)} alerta(s) identificado(s)."
+                )
+            }
+
+        except Exception as e:
+            return {"erro": str(e)}

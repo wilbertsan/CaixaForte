@@ -81,7 +81,7 @@ def criar_team_caixa_forte(
     - **Maga Patológica**: Especialista em planejamento tributário - consulte para cálculo de IR, estratégias fiscais, compensação de prejuízos, investimentos isentos
     - **Tia Patilda**: Especialista em ativos reais - consulte para imóveis físicos, terrenos, financiamento, ouro, investimentos alternativos, patrimônio multigeracional
     - **Gizmoduck**: Analista de criptoativos - consulte para Bitcoin, Ethereum, segurança de blockchain, protocolos DeFi, custódia, exposição a cripto
-    - **Webby**: Analista de extratos de cartões - consulte para classificar gastos, detectar assinaturas, encontrar cobranças suspeitas, analisar uso do limite
+    - **Webby**: Analista de extratos de cartões e extratos Nubank - consulte para classificar gastos, detectar assinaturas, encontrar cobranças suspeitas, analisar uso do limite, buscar e processar extratos CSV da Nubank do email, gravar gastos categorizados na planilha
 
     ## Regras de Delegação:
     1. Para perguntas sobre ações específicas → Huguinho
@@ -89,13 +89,18 @@ def criar_team_caixa_forte(
     3. Para perguntas sobre renda fixa, SELIC, CDI, CDBs → Luizinho
     4. Para registro ou análise de gastos pessoais → Pato Donald
     5. Para buscar oportunidades de investimento → Gastão
-    6. Para processar emails, PDFs ou atualizar planilhas → Professor Pardal
+    6. Para processar emails da Rico, notas de corretagem ou atualizar planilhas de negociações → Professor Pardal
     7. Para dólar, ETFs globais, BDRs, investimentos internacionais, diversificação geográfica → Zé Carioca
     8. Para impostos, IR, planejamento tributário, isenções, compensação de prejuízos → Maga Patológica
     9. Para imóveis físicos, terrenos, financiamento, comprar vs alugar, ouro, ativos alternativos, legado → Tia Patilda
     10. Para criptomoedas, Bitcoin, Ethereum, blockchain, DeFi, segurança cripto, custódia → Gizmoduck
-    11. Para extratos de cartão, classificar gastos, assinaturas, cobranças duplicadas, uso de limite → Webby
+    11. Para extratos de cartão, extratos Nubank, classificar gastos, assinaturas, cobranças duplicadas, uso de limite, buscar extratos do email → Webby
     12. Para perguntas gerais sobre estratégia → Coordene entre os especialistas
+
+    ## IMPORTANTE - Distinção de emails:
+    - Emails da **Rico corretora** (notas de corretagem, negociações) → **Professor Pardal**
+    - Emails da **Nubank** (extratos de cartão de crédito CSV) → **Webby**
+    - Quando o usuário pedir para "verificar extratos de cartão do email", "analisar fatura Nubank", "buscar faturas do email" → **Webby**
 
     ## Formato de Resposta:
     - Sempre comece identificando qual especialista está respondendo
