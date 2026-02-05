@@ -8,6 +8,12 @@ import os
 from agno.team import Team
 from agno.models.openai import OpenAIChat
 from agno.db.sqlite import SqliteDb
+from agno.guardrails import (
+    PIIDetectionGuardrail,
+    PromptInjectionGuardrail,
+    OpenAIModerationGuardrail,
+)
+from guardrails import TokenLimitGuardrail
 
 from agents.tio_patinhas import criar_tio_patinhas
 from agents.huguinho import criar_huguinho
@@ -47,8 +53,8 @@ def criar_team_caixa_forte(
     Returns:
         Team configurado com todos os agentes
     """
-    # Configurar modelo
-    model = OpenAIChat(id=model_id)
+    # Configurar modelo com limite de tokens de saída
+    model = OpenAIChat(id=model_id, max_tokens=2048)
 
     # Configurar banco de dados e memória
     db = _get_db()
@@ -115,6 +121,20 @@ def criar_team_caixa_forte(
     - Nunca faça recomendações definitivas de investimento
     """
 
+    # Guardrails de segurança (protegem todos os agentes via Team)
+    guardrails = [
+        TokenLimitGuardrail(max_input_tokens=4096),
+        PIIDetectionGuardrail(
+            mask_pii=True,
+            enable_credit_card_check=True,
+            enable_email_check=True,
+            enable_phone_check=True,
+            enable_ssn_check=True,
+        ),
+        PromptInjectionGuardrail(),
+        OpenAIModerationGuardrail(),
+    ]
+
     # Criar o time com memória persistente
     team = Team(
         name="Caixa Forte",
@@ -130,6 +150,7 @@ def criar_team_caixa_forte(
         enable_agentic_memory=True,
         add_history_to_context=True,
         num_history_runs=5,
+        pre_hooks=guardrails,
     )
 
     return team

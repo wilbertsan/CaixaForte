@@ -20,8 +20,8 @@ from telegram.constants import ParseMode, ChatAction
 
 from team import criar_team_caixa_forte
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Carregar variáveis de ambiente (override=True para sobrescrever variáveis do sistema)
+load_dotenv(override=True)
 
 # Configurar logging
 logging.basicConfig(
